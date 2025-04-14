@@ -3,6 +3,10 @@ import cors from "cors"
 import dotenv from "dotenv"
 import { StreamChat } from "stream-chat"
 import OpenAI from "openai"
+import { db } from "./config/database.js"
+import { chats, users } from "./db/schema.js"
+import { eq } from "drizzle-orm"
+import { ChatCompletionMessageParam } from "openai/resources.mjs"
 
 dotenv.config()
 
@@ -45,6 +49,20 @@ app.post("/register", async (req: Request, res: Response): Promise<any> => {
       })
     }
 
+    // check if user exists in database
+    const existingUser = await db
+      .select()
+      .from(users)
+      .where(eq(users.userId, userId))
+    if (!existingUser.length) {
+      // insert user into database
+      await db.insert(users).values({
+        userId: userId,
+        username: username,
+        email: email,
+      })
+    }
+
     res.status(200).json({ userId, username, email })
   } catch (error) {
     res.status(500).json({ error: "Internal server error" })
@@ -60,20 +78,31 @@ app.post("/chat", async (req: Request, res: Response): Promise<any> => {
   try {
     //verify user exists
     const userResponse = await chatClient.queryUsers({ id: userId })
+
     if (!userResponse.users.length) {
       return res.status(400).json({ error: "User not found" })
     }
     // Send message to OpenAI
-    console.log("Sending message to OpenAI:", message)
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4",
+      model: "gpt-3.5-turbo",
       messages: [{ role: "user", content: message }],
     })
 
-    console.log("OpenAI response:", response)
+    const aiMessage = response.choices[0].message.content ?? "no response"
 
-    res.send("success")
+    // create or get a chat channel
+    const channel = chatClient.channel("messaging", "ai-chat", {
+      name: "AI Chat",
+      members: [userId],
+    })
+    await channel.create()
+    await channel.sendMessage({
+      text: aiMessage,
+      user: { id: userId },
+    })
+
+    res.status(200).json({ message: aiMessage })
   } catch (error) {
     res.status(500).json({ error: "Internal server error" })
   }
