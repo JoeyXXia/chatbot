@@ -82,6 +82,15 @@ app.post("/chat", async (req: Request, res: Response): Promise<any> => {
     if (!userResponse.users.length) {
       return res.status(400).json({ error: "User not found" })
     }
+    // verify user exists in database
+    const existingUser = await db
+      .select()
+      .from(users)
+      .where(eq(users.userId, userId))
+    if (!existingUser.length) {
+      return res.status(400).json({ error: "User not found in database" })
+    }
+
     // Send message to OpenAI
 
     const response = await openai.chat.completions.create({
@@ -90,6 +99,13 @@ app.post("/chat", async (req: Request, res: Response): Promise<any> => {
     })
 
     const aiMessage = response.choices[0].message.content ?? "no response"
+
+    // Save chat to database
+    await db.insert(chats).values({
+      userId: userId,
+      message: message,
+      reply: aiMessage,
+    })
 
     // create or get a chat channel
     const channel = chatClient.channel("messaging", "ai-chat", {
@@ -103,6 +119,28 @@ app.post("/chat", async (req: Request, res: Response): Promise<any> => {
     })
 
     res.status(200).json({ message: aiMessage })
+  } catch (error) {
+    res.status(500).json({ error: "Internal server error" })
+  }
+})
+
+// Get chat history
+app.get("get-messages", async (req: Request, res: Response): Promise<any> => {
+  const { userId } = req.params
+  if (!userId) {
+    res.status(400).json({ error: "User ID is required" })
+  }
+  try {
+    // get chat history from database
+    const chatHistory = await db
+      .select()
+      .from(chats)
+      .where(eq(chats.userId, userId))
+
+    if (!chatHistory.length) {
+      return res.status(400).json({ error: "No chat history found" })
+    }
+    res.status(200).json(chatHistory)
   } catch (error) {
     res.status(500).json({ error: "Internal server error" })
   }
