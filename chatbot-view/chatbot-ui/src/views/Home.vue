@@ -21,9 +21,16 @@
         placeholder="email"
         v-model="email"
       />
+      <button
+        @click="createUser"
+        class="w-full p-2 bg-blue-500 rounded-lg mb-2"
+      >
+        {{ loading ? "Loading..." : "Create User" }}
+      </button>
       <button class="w-full p-2 bg-blue-500 rounded-lg">
         {{ loading ? "Loading..." : "Start Chat" }}
       </button>
+      <p v-if="error" class="text-red-500 mt-2 text-center">{{ error }}</p>
     </div>
   </div>
 </template>
@@ -31,11 +38,43 @@
 <script setup lang="ts">
 import rootImage from "../assets/robot.png"
 import { ref } from "vue"
+import { useUserStore } from "../stores/user"
+import { useRouter } from "vue-router"
+import axios from "axios"
 
 const name = ref("")
 const email = ref("")
 const loading = ref(false)
 const error = ref("")
+
+const userStore = useUserStore()
+const router = useRouter()
+
+const createUser = async () => {
+  if (!name.value || !email.value) {
+    error.value = "Please fill in all fields."
+    return
+  }
+  loading.value = true
+  error.value = ""
+
+  try {
+    const { data } = await axios.post(
+      `${import.meta.env.VITE_API_URL}/register`,
+      {
+        name: name.value,
+        email: email.value,
+      }
+    )
+    userStore.setUser(data)
+
+    router.push("/chat")
+  } catch (err) {
+    error.value = "Failed to create user. Please try again."
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <style lang="less" scoped></style>
